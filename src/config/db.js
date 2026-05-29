@@ -1,13 +1,12 @@
-import mongoose  from "mongoose";
+import mongoose from "mongoose";
 
 
-async function connectDB(){
+async function connectDB() {
     try {
-          await mongoose.connect("mongodb://localhost:27017/Kodex")
-
-          console.log("Connected to DB");
+        await mongoose.connect("mongodb+srv://Kodex:Kodex%409450@cluster0.iiqdqvs.mongodb.net/CRUD")
+        console.log("Connected to DB");
     }
-    catch(error){
+    catch (error) {
         console.log("Error while conneting mongodb", error);
     }
 }

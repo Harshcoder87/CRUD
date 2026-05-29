@@ -8,4 +8,4 @@ let noteSchema = new mongoose.Schema({
 
 const NoteModel = mongoose.model('notes', noteSchema)
 
-module.exports = NoteModel;
+export default NoteModel;
