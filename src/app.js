@@ -5,7 +5,9 @@ import NoteModel from './models/notes.models.js'
 import mongoose from 'mongoose';
 import userModel from './models/user.models.js';
 import cookieParser from "cookie-parser";
-
+import jwt from 'jsonwebtoken';
+import dotenv from "dotenv";
+dotenv.config();
 
 
 const app = express();
@@ -22,47 +24,101 @@ app.use(cookieParser());
  *   @access Public access
  */
 app.post("/api/auth/register", async (req, res) => {
-  const { email, name } = req.body;
-
-  // --- validation ---------
-  if (!email) {
-    return res.status(400).json({ error: "Email is required" });
-  }
-  if (!name) {
-    return res.status(400).json({ error: "Name is required" });
-  }
-
-  // Validate email with regex
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) {
-    return res.status(400).json({ message: "Invalid email format" });
-  }
-
-  // --- simple cookie creation (no JWT) -----------
-  const token = JSON.stringify({ name, email });
-
-  res.cookie("token", token, {
-    httpOnly: true,   // prevents client-side JS access
-    secure: false,    // set true if using HTTPS
-    sameSite: "strict",
-    maxAge: 60 * 60 * 1000 // 1 hour
-  });
-
-  return res.status(201).json({
-    message: "User registered successfully",
-    user: { name, email }
-  });
+   const { email, name, password } = req.body;
 
 
+   // --- validation ---------
+   if (!email) {
+      return res.status(400).json({ error: "Email is required" });
+   }
+   if (!name) {
+      return res.status(400).json({ error: "Name is required" });
+   }
+
+   //----- password and it's lenght check
+   if (!password || password.trim().length < 6) {
+      return res.status(400).json({ error: "Password must be at least 6 characters long" });
+   }
+
+   // Validate email with regex
+   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+   if (!emailRegex.test(email)) {
+      return res.status(400).json({ message: "Invalid email format" });
+   }
+
+   //----If validation passes, create the user----
+
+   const newUser = await userModel.create({ name, email, password });
+
+   // --- simple cookie creation (no JWT) -----------
+   const token = jwt.sign({ name, email },
+      process.env.JWT_SECRET
+   );
+console.log("JWT_SECRET at startup:", process.env.JWT_SECRET);
+
+
+   res.cookie("token", token, {
+      httpOnly: true,   // prevents client-side JS access
+      secure: false,    // set true if using HTTPS
+      sameSite: "strict",
+      maxAge: 60 * 60 * 1000 // 1 hour
+   });
+
+   return res.status(201).json({
+      message: "User registered successfully",
+      user: newUser
+   });
 
 });
 
+app.post('api/auth/login', async(req, res)  =>{
+      const { email, password } = req.body;
 
+       // ---- Validation ----
+    if (!email) {
+        return res.status(400).json({ error: "Email is required" });
+    }
 
+    if (!password) {
+        return res.status(400).json({ error: "Password is required" });
+    }
 
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+    if (!emailRegex.test(email)) {
+        return res.status(400).json({ error: "Invalid email format" });
+    }
 
+    if (password.trim().length < 6) {
+        return res.status(400).json({ error: "Password must be at least 6 characters long" });
+    }
+ 
+      // ---- If validation passes, check if the user exists ----
+  
+      //Checking the email is valid
+      const user = await userModel.findOne({ email });
 
+      if(!user){
+         return res.status(404).json({error: "Invalid credentials"});
+      }
+
+     if(!(user.matchPassword(password))){
+      return res.status(401).json({error:"Invalid credentials" });
+     }
+
+   const token = jwt.sign(
+      {id: user._id, email : user.email},
+      process.env.JWT_SECRET);
+      console.log(token);
+   
+      res.cookie("token", token)
+
+       return res.status(200).json({
+         message : "User Logged in sucessfully",
+         user
+       }
+   )
+})
 
 
 /**
@@ -74,6 +130,10 @@ app.post("/api/auth/register", async (req, res) => {
 app.post('/api/notes', async (req, res) => {
 
    const { title, description } = req.body;
+   const token = req.cookies.token;
+   const user = jwt.verify(token, process.env.JWT_SECRET);
+   req.user = user; //saving the user data coming in req.user
+
 
    //=========validation==========
 
@@ -90,13 +150,18 @@ app.post('/api/notes', async (req, res) => {
    //------validation is done then create --------
 
 
-   const newNote = await NoteModel.create({ title, description });
+   //--- if validation passes, create the new note -----
+
+   const newNote = await NoteModel.create({
+      title,
+      description,
+      user: req.user.email  //sending user mail id alos
+   })
 
    return res.status(201).json({
       message: "New note created",
-      note: newNote
-   }
-   );
+      note: newNote,
+   });
 })
 
 /**
@@ -107,7 +172,13 @@ app.post('/api/notes', async (req, res) => {
 
 app.get('/api/notes', async (req, res) => {
 
-   const notes = await NoteModel.find();
+
+   req.user = user; // { id: "user_id", email: "user_email" }
+
+
+   const notes = await NoteModel.find({
+      user: req.user.email  //making query find with email who is logged now
+   });
 
 
    res.status(200).json({
